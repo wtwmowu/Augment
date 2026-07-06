@@ -116,6 +116,7 @@ AFRAME.registerComponent('engine', {
     panel.setAttribute('position', '0 1.15 0');
     panel.setAttribute('width', '2.4'); panel.setAttribute('height', '0.86');
     panel.setAttribute('material', 'color: #14161b; opacity: 0.85; side: double');
+    panel.setAttribute('billboard', '');
     markerEl.appendChild(panel);
 
     const title = document.createElement('a-entity');
@@ -190,7 +191,7 @@ AFRAME.registerComponent('engine', {
 <a-scene
   vr-mode-ui="enabled: false"
   renderer="antialias: true; alpha: true"
-  arjs="sourceType: webcam; detectionMode: mono_and_matrix; matrixCodeType: 4x4_BCH_13_5_5; debugUIEnabled: false;">
+  arjs="sourceType: webcam; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960; detectionMode: mono_and_matrix; matrixCodeType: 4x4_BCH_13_5_5; debugUIEnabled: false;">
 
   <!-- MARKER SHELLS — one per part. Content is injected by the engine from PARTS.
        Add a part = copy a line, change value="ID". -->
