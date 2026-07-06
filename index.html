@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Augmented Design — data-driven kit</title>
+
+<script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
+
+<style>
+  body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
+  .hud {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 999; background: rgba(20,22,27,.85); color: #e8e6df;
+    padding: 8px 14px; border-radius: 8px; font-size: 14px; text-align: center; max-width: 92vw;
+  }
+</style>
+
+<script>
+/* ============================================================
+   CONFIG  —  THIS is what you edit. Two blocks: PARTS, CONTAGIONS.
+   ============================================================ */
+
+/* Each key is a barcode marker ID.
+   To add a part: add an entry here AND a matching <a-marker ... value="ID">
+   shell down in the body, then print that barcode marker. */
+const PARTS = {
+  '0': {
+    name: 'Unit',
+    color: '#C8842B',
+    default: 'standard',
+    // A primitive box for now:
+    model: { type: 'box', scale: '0.8 0.8 0.8', y: 0.4 }
+    // ...or YOUR model — upload the .glb to your host, then use:
+    // model: { type: 'gltf', url: 'unit.glb', scale: '0.5 0.5 0.5', y: 0 }
+  },
+  '1': {
+    name: 'Corridor',
+    color: '#6B7D9E',
+    default: 'passage',
+    model: { type: 'box', scale: '1.5 0.24 0.7', y: 0.12 }
+  }
+};
+
+/* A rule fires when ALL ids in 'when' are seen together.
+   It sets each listed part's state, and optionally draws a link between two of them.
+   To add logic: add another rule object. */
+const CONTAGIONS = [
+  { when: ['0','1'], set: { '0': 'spilling', '1': 'spillover' }, link: ['0','1'], color: '#C8842B' }
+];
+
+
+/* ============================================================
+   ENGINE  —  the machinery. You can mostly leave this alone.
+   ============================================================ */
+AFRAME.registerComponent('engine', {
+  init: function () {
+    this.sceneEl = this.el.sceneEl;
+    this.markerById = {};
+    this.visible = {};
+    this.lastState = {};
+    this._pA = new THREE.Vector3(); this._pB = new THREE.Vector3();
+    this._dir = new THREE.Vector3(); this._up = new THREE.Vector3(0, 1, 0);
+
+    // Build each marker's content from PARTS, and track when it's seen.
+    document.querySelectorAll('a-marker.part').forEach((m) => {
+      const id = m.getAttribute('value');
+      this.markerById[id] = m;
+      this.visible[id] = false;
+      this.buildPart(m, id);
+      m.addEventListener('markerFound', () => { this.visible[id] = true; });
+      m.addEventListener('markerLost',  () => { this.visible[id] = false; });
+    });
+
+    // One link cylinder per contagion that declares a link.
+    CONTAGIONS.forEach((c) => {
+      if (!c.link) return;
+      const b = document.createElement('a-cylinder');
+      b.setAttribute('radius', '0.06');
+      b.setAttribute('height', '1');
+      b.setAttribute('material', 'color: ' + (c.color || '#C8842B'));
+      b.setAttribute('visible', 'false');
+      this.sceneEl.appendChild(b);
+      c._bridge = b;
+    });
+  },
+
+  buildPart: function (markerEl, id) {
+    const p = PARTS[id];
+    if (!p) return;
+
+    let model;
+    if (p.model.type === 'gltf') {
+      model = document.createElement('a-entity');
+      model.setAttribute('gltf-model', 'url(' + p.model.url + ')');
+    } else {
+      model = document.createElement('a-box');
+      model.setAttribute('material', 'color: ' + p.color + '; opacity: 0.86');
+    }
+    model.setAttribute('scale', p.model.scale || '1 1 1');
+    model.setAttribute('position', '0 ' + (p.model.y || 0) + ' 0');
+    markerEl.appendChild(model);
+
+    const panel = document.createElement('a-plane');
+    panel.setAttribute('position', '0 1.15 0');
+    panel.setAttribute('width', '2.4'); panel.setAttribute('height', '0.86');
+    panel.setAttribute('material', 'color: #14161b; opacity: 0.85; side: double');
+    markerEl.appendChild(panel);
+
+    const title = document.createElement('a-entity');
+    title.setAttribute('text', { value: p.name.toUpperCase(), align: 'center', color: '#e8e6df', width: 2.0, wrapCount: 10 });
+    title.setAttribute('position', '0 1.38 0.02');
+    markerEl.appendChild(title);
+
+    const stateT = document.createElement('a-entity');
+    stateT.setAttribute('id', 'state-' + id);
+    stateT.setAttribute('text', { value: 'state: ' + p.default, align: 'center', color: p.color, width: 2.4, wrapCount: 18 });
+    stateT.setAttribute('position', '0 1.02 0.02');
+    markerEl.appendChild(stateT);
+
+    this.lastState[id] = p.default;
+  },
+
+  tick: function () {
+    // 1. every part starts at its default state each frame
+    const state = {};
+    for (const id in PARTS) state[id] = PARTS[id].default;
+
+    // 2. apply each contagion whose parts are all present; drive its link
+    CONTAGIONS.forEach((c) => {
+      const active = c.when.every((id) => this.visible[id]);
+      if (active && c.set) for (const id in c.set) state[id] = c.set[id];
+      if (c._bridge) this.updateBridge(c, active);
+    });
+
+    // 3. update only the labels that changed
+    for (const id in state) {
+      if (state[id] !== this.lastState[id]) {
+        this.lastState[id] = state[id];
+        const el = document.getElementById('state-' + id);
+        if (el) el.setAttribute('text', 'value', 'state: ' + state[id]);
+      }
+    }
+  },
+
+  updateBridge: function (c, active) {
+    const b = c._bridge;
+    if (!active) { if (b.getAttribute('visible')) b.setAttribute('visible', false); return; }
+    const mA = this.markerById[c.link[0]];
+    const mB = this.markerById[c.link[1]];
+    if (!mA || !mB) return;
+
+    mA.object3D.updateMatrixWorld(true);
+    mB.object3D.updateMatrixWorld(true);
+    mA.object3D.getWorldPosition(this._pA); this._pA.y += 0.4;
+    mB.object3D.getWorldPosition(this._pB); this._pB.y += 0.4;
+
+    const o = b.object3D;
+    o.position.copy(this._pA).add(this._pB).multiplyScalar(0.5);
+    this._dir.copy(this._pB).sub(this._pA);
+    const len = this._dir.length();
+    if (len > 1e-4) {
+      this._dir.normalize();
+      o.quaternion.setFromUnitVectors(this._up, this._dir);
+      o.scale.set(1, len, 1);
+    }
+    if (!b.getAttribute('visible')) b.setAttribute('visible', true);
+  }
+});
+</script>
+</head>
+<body>
+
+<div class="hud">Show markers 0 (Unit) and 1 (Corridor) — together they contage</div>
+
+<a-scene
+  vr-mode-ui="enabled: false"
+  renderer="antialias: true; alpha: true"
+  arjs="sourceType: webcam; detectionMode: mono_and_matrix; matrixCodeType: 3x3; debugUIEnabled: false;">
+
+  <!-- MARKER SHELLS — one per part. Content is injected by the engine from PARTS.
+       Add a part = copy a line, change value="ID". -->
+  <a-marker class="part" id="m0" type="barcode" value="0"
+            smooth="true" smoothCount="8" smoothTolerance="0.01" smoothThreshold="4"></a-marker>
+  <a-marker class="part" id="m1" type="barcode" value="1"
+            smooth="true" smoothCount="8" smoothTolerance="0.01" smoothThreshold="4"></a-marker>
+
+  <a-entity engine></a-entity>
+  <a-entity camera></a-entity>
+</a-scene>
+
+</body>
+</html>
