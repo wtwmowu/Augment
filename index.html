@@ -33,7 +33,7 @@ const PARTS = {
     // A primitive box for now:
     // model: { type: 'box', scale: '0.8 0.8 0.8', y: 0.4 }
     // ...or YOUR model — upload the .glb to your host, then use:
-    model: { type: 'gltf', url: 'unit.glb', scale: '0.1 0.1 0.1', y: 0 }
+    model: { type: 'gltf', url: 'unit.glb', scale: '1 1 1', y: 0 }
   },
   '1': {
     name: 'Corridor',
@@ -54,6 +54,16 @@ const CONTAGIONS = [
 /* ============================================================
    ENGINE  —  the machinery. You can mostly leave this alone.
    ============================================================ */
+
+  AFRAME.registerComponent('billboard', {
+  tick: function () {
+    const cam = this.el.sceneEl.camera;
+    if (!cam) return;
+    cam.getWorldPosition(this._c || (this._c = new THREE.Vector3()));
+    this.el.object3D.lookAt(this._c);
+  }
+});
+
 AFRAME.registerComponent('engine', {
   init: function () {
     this.sceneEl = this.el.sceneEl;
@@ -111,12 +121,14 @@ AFRAME.registerComponent('engine', {
     const title = document.createElement('a-entity');
     title.setAttribute('text', { value: p.name.toUpperCase(), align: 'center', color: '#e8e6df', width: 2.0, wrapCount: 10 });
     title.setAttribute('position', '0 1.38 0.02');
+    title.setAttribute('billboard', '');
     markerEl.appendChild(title);
 
     const stateT = document.createElement('a-entity');
     stateT.setAttribute('id', 'state-' + id);
     stateT.setAttribute('text', { value: 'state: ' + p.default, align: 'center', color: p.color, width: 2.4, wrapCount: 18 });
     stateT.setAttribute('position', '0 1.02 0.02');
+    title.setAttribute('billboard', '');
     markerEl.appendChild(stateT);
 
     this.lastState[id] = p.default;
